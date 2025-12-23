@@ -3,9 +3,13 @@ import uuid
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
 from sqlalchemy import Column, Integer, String
+from app.core.config import settings
 
 # Shared properties
 class UserBase(SQLModel):
+    __table_args__ = {"schema": settings.POSTGRES_SCHEMA}
+    __tablename__ = "account"
+
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     name: str = "default_name"
     # 权限等级 0最低
@@ -43,10 +47,8 @@ class UpdatePassword(SQLModel):
 
 # Database model, database table inferred from class name
 class User(UserBase, table=True):
-    hashed_password: str
-    id: int = Field(primary_key=True)
-    items: list["Item"] = Relationship(back_populates="owner", cascade_delete=True)
-
+    id: int | None = Field(primary_key=True, default=None)
+    password: str
 
 # Properties to return via API, id is always required
 class UserPublic(UserBase):

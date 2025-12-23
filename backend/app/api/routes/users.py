@@ -1,11 +1,10 @@
-import uuid
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from app import crud
 from app.api.deps import SessionDep
 from app.models import (
     UpdatePassword,
-    User,
+    # User,
     UserCreate,
     UserPublic,
     UserRegister,
@@ -33,8 +32,9 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
             status_code=400,
             detail="The user with this email already exists in the system.",
         )
-    # 创建用户
+    # 创建用户 默认权限0 激活后权限1
     user = crud.create_user(session=session, user_create=user_in)
+    print(f"user data inserted, sending email\n{user}")
     if settings.emails_enabled and user_in.email:
         email_data = generate_new_account_email(
             email_to=user_in.email, username=user_in.email, password=user_in.password
