@@ -94,7 +94,7 @@ def generate_new_account_email(
             "username": username,
             "password": password,
             "email": email_to,
-            "link": f"{settings.FRONTEND_HOST}/verify_email?email_token={token}",
+            "link": f"{settings.FRONTEND_HOST}/verify_email/create?email_token={token}",
         },
     )
     return EmailData(html_content=html_content, subject=subject)
