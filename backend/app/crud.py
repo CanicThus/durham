@@ -1,12 +1,12 @@
 import uuid
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 from typing import Any
 from app.core.security import get_password_hash, verify_password
 from app.models import User, UserCreate
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:
     db_obj = User.model_validate(
-        user_create, update={"password": get_password_hash(user_create.password)}
+        user_create, update={"password": get_password_hash(user_create.password), "privilege": 0}
     )
     print(db_obj)
     session.add(db_obj)
@@ -42,3 +42,18 @@ def authenticate(*, session: Session, email: str, password: str) -> User | None:
         return None
     return db_user
 
+def check_user_active(*, session: Session, email: str) -> bool | None:
+    statement = select(User).where(User.email == email, User.privilege != 0)
+    if session.exec(statement).first():
+        return True
+    return False
+
+def activate_user(*, session: Session, email: str) -> User | None:
+    base_privilege: int = 1
+
+    statement = select(User).where(User.email == email)
+    session_user = session.exec(statement).first()
+    session_user.privilege = base_privilege
+    session.add(session_user)
+    session.commit()
+    session.refresh(session_user)
