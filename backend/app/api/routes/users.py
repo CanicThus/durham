@@ -9,13 +9,9 @@ from app.models import (
     UpdatePassword,
     UpdateProfile,
     UpdatePreference,
-    # User,
     UserCreate,
+    Message,
     UserPublic,
-    UserRegister,
-    UsersPublic,
-    UserUpdate,
-    UserUpdateMe, Message,
 )
 from app.utils import send_email, generate_new_account_email, generate_email_token, verify_email_token
 from app.core.config import settings
@@ -123,3 +119,10 @@ def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
         )
     crud.delete_user(session=session, email=current_user.email)
     return Message(message="User deleted successfully")
+
+@router.get("/me", response_model=UserPublic)
+def read_user_me(current_user: CurrentUser) -> Any:
+    """
+    Get current user.
+    """
+    return current_user

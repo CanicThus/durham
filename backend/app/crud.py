@@ -2,13 +2,13 @@ import uuid
 from sqlmodel import Session, select, update
 from typing import Any
 from app.core.security import get_password_hash, verify_password
-from app.models import User, UserCreate, Projects, Feedback
+from app.models import User, UserCreate, Projects, Feedback, FeedbackBase
+
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:
     db_obj = User.model_validate(
         user_create, update={"password": get_password_hash(user_create.password), "privilege": 0}
     )
-    print(db_obj)
     session.add(db_obj)
     session.commit()
     session.refresh(db_obj)
@@ -33,6 +33,10 @@ def get_user_by_email(*, session: Session, email: str) -> User | None:
     session_user = session.exec(statement).first()
     return session_user
 
+def get_user_by_id(*, session: Session, user_id: int) -> User | None:
+    statement = select(User).where(User.id == user_id)
+    session_user = session.exec(statement).first()
+    return session_user
 
 def authenticate(*, session: Session, email: str, password: str) -> User | None:
     db_user = get_user_by_email(session=session, email=email)
@@ -84,3 +88,11 @@ def delete_user(*, session: Session, email: str) -> bool | None:
     session.refresh(u_result)
 
     return True
+
+def create_feedback(*, session: Session, feedback_create: FeedbackBase) -> Feedback | None:
+    db_obj = Feedback.model_validate(feedback_create)
+    session.add(db_obj)
+    session.commit()
+    session.refresh(db_obj)
+    return db_obj
+

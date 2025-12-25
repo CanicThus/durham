@@ -12,7 +12,7 @@ from app.core.security import get_password_hash
 from app.models import Message, Token, NewPassword
 from app.utils import verify_email_token
 
-router = APIRouter(tags=["login"])
+router = APIRouter(prefix="/login",tags=["login"])
 
 @router.post("/login/access-token")
 def login_access_token(
