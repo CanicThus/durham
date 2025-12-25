@@ -1,8 +1,10 @@
 import uuid
+from typing import List
 
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
-from sqlalchemy import Column, Integer, String, table
+from sqlalchemy import Column, Integer, String, table, LargeBinary
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from app.core.config import settings
 
 # Shared properties
@@ -15,9 +17,15 @@ class UserBase(SQLModel):
     # 权限等级 0最低
     privilege: int | None = None
     # json str
-    preference: str | None = None
+    preference: dict | None = Field(
+        default=None,
+        sa_column=Column(JSONB)
+    )
     # 头像
-    profile_photo: bytes
+    profile_photo: bytes |None = Field(
+        default=None,
+        sa_column=Column(LargeBinary)
+    )
 
 # Properties to receive via API on creation
 class UserCreate(UserBase):
@@ -89,7 +97,10 @@ class FeedbackBase(SQLModel):
 
     user_id: int | None = None
     content:str | None = None
-    photos: list[bytes] | None = None
+    photos:List[bytes] | None = Field(
+        default=None,
+        sa_column=Column(ARRAY(LargeBinary))
+    )
 
 class Feedback(FeedbackBase, table=True):
     id: int = Field(default=None, primary_key=True)
@@ -99,7 +110,10 @@ class ProjectsBase(SQLModel):
     __tablename__ = "projects"
 
     user_id: int | None = None
-    content: dict | None = None
+    content: dict | None = Field(
+        default=None,
+        sa_column=Column(JSONB)
+    )
 
 class Projects(ProjectsBase, table=True):
     id: int = Field(default=None, primary_key=True)
