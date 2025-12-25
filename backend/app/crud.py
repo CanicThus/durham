@@ -2,7 +2,7 @@ import uuid
 from sqlmodel import Session, select, update
 from typing import Any
 from app.core.security import get_password_hash, verify_password
-from app.models import User, UserCreate
+from app.models import User, UserCreate, Projects, Feedback
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:
     db_obj = User.model_validate(
@@ -57,3 +57,30 @@ def activate_user(*, session: Session, email: str) -> User | None:
     session.add(session_user)
     session.commit()
     session.refresh(session_user)
+
+def delete_user(*, session: Session, email: str) -> bool | None:
+    # get user id
+    u_statement = select(User).where(User.email == email)
+    u_result = session.exec(u_statement).first()
+    user_id = u_result.id
+
+    # 删除project
+    p_statement = select(Projects).where(Projects.user_id == user_id)
+    p_results = session.exec(p_statement)
+    session.delete(p_results)
+    session.commit()
+    session.refresh(p_results)
+
+    # 删除feedback
+    f_statement = select(Feedback).where(Feedback.user_id == user_id)
+    f_results = session.exec(f_statement)
+    session.delete(f_results)
+    session.commit()
+    session.refresh(f_results)
+
+    # 删除user
+    session.delete(u_result)
+    session.commit()
+    session.refresh(u_result)
+
+    return True

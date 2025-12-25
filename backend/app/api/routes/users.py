@@ -7,6 +7,8 @@ from app.api.deps import SessionDep, CurrentUser
 from app.core.security import get_password_hash, verify_password
 from app.models import (
     UpdatePassword,
+    UpdateProfile,
+    UpdatePreference,
     # User,
     UserCreate,
     UserPublic,
@@ -87,4 +89,37 @@ def update_password_me(
     current_user.hashed_password = hashed_password
     session.add(current_user)
     session.commit()
-    return Message(message="Password updated successfully")
+    return Message(message="Password update successfully")
+
+@router.patch("/me/profile_photo", response_model=Message)
+def update_Profile_me(
+    *, session: SessionDep, body: UpdateProfile, current_user: CurrentUser
+) -> Any:
+    current_user.profile_photo = body.profile_photo
+    session.add(current_user)
+    session.commit()
+    return Message(message="Profile photo update successfully")
+
+@router.patch("/me/preference", response_model=Message)
+def update_Profile_me(
+    *, session: SessionDep, body: UpdatePreference, current_user: CurrentUser
+) -> Any:
+    current_user.preference = body.preference
+    session.add(current_user)
+    session.commit()
+    return Message(message="preference update successfully")
+
+@router.delete("/me", response_model=Message)
+def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
+    """
+    Delete own user.
+    """
+    # 检查用户存在
+    user = crud.get_user_by_email(session=session, email=current_user.email)
+    if not user:
+        raise HTTPException(
+            status_code=400,
+            detail="The user with this email does not exists in the system.",
+        )
+    crud.delete_user(session=session, email=current_user.email)
+    return Message(message="User deleted successfully")
