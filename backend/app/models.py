@@ -37,26 +37,15 @@ class UserRegister(SQLModel):
     full_name: str | None = Field(default=None, max_length=255)
 
 # Properties to receive via API on update, all are optional
-class UserUpdate(UserBase):
-    email: EmailStr | None = Field(default=None, max_length=255)  # type: ignore
-    password: str | None = Field(default=None, min_length=8, max_length=128)
-    preference: str | None = Field(default=None)
-
-
-class UserUpdateMe(SQLModel):
-    full_name: str | None = Field(default=None, max_length=255)
-    email: EmailStr | None = Field(default=None, max_length=255)
-
-
 class UpdatePassword(SQLModel):
     current_password: str = Field(min_length=8, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
 
 class UpdatePreference(SQLModel):
-    new_preference: dict | None = Field(default=None)
+    new_preference: dict | None = Field(default=None, sa_column=Column(JSONB))
 
 class UpdateProfile(SQLModel):
-    mew_profile: bytes | None = Field(default=None)
+    mew_profile: bytes | None = Field(default=None, sa_column=Column(LargeBinary))
 
 # Database model, database table inferred from class name
 class User(UserBase, table=True):
@@ -68,9 +57,9 @@ class UserPublic(UserBase):
     id: int
 
 
-class UsersPublic(SQLModel):
-    data: list[UserPublic]
-    count: int
+# class UsersPublic(SQLModel):
+#     data: list[UserPublic]
+#     count: int
 
 
 # Generic message
@@ -105,7 +94,7 @@ class FeedbackBase(SQLModel):
 class Feedback(FeedbackBase, table=True):
     id: int = Field(default=None, primary_key=True)
 
-class ProjectsBase(SQLModel):
+class ProjectBase(SQLModel):
     __table_args__ = {"schema": settings.POSTGRES_SCHEMA}
     __tablename__ = "projects"
 
@@ -115,5 +104,12 @@ class ProjectsBase(SQLModel):
         sa_column=Column(JSONB)
     )
 
-class Projects(ProjectsBase, table=True):
+class Project(ProjectBase, table=True):
     id: int = Field(default=None, primary_key=True)
+
+class UpdateProject(SQLModel):
+    id: int | None = None
+    content: dict | None = Field(
+        default=None,
+        sa_column=Column(JSONB)
+    )
