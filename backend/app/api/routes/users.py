@@ -29,7 +29,7 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Message:
     # 检查用户是否存在
     user = crud.get_user_by_email(session=session, email=user_in.email)
     is_user_active = crud.check_user_active(session=session, email=user_in.email)
-    if user and not is_user_active:
+    if user or is_user_active:
         raise HTTPException(
             status_code=400,
             detail="The user with this email already exists in the system.",
