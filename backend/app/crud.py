@@ -2,7 +2,7 @@ import uuid
 from sqlmodel import Session, select, update
 from typing import Any
 from app.core.security import get_password_hash, verify_password
-from app.models import User, UserCreate, Project, Feedback, FeedbackBase, ProjectBase
+from app.models import User, UserCreate, Project, Feedback, FeedbackBase, ProjectBase, ProjectContentBase, ProjectContent
 
 
 def create_user(*, session: Session, user_create: UserCreate) -> User:
@@ -68,9 +68,16 @@ def delete_user(*, session: Session, email: str) -> bool | None:
     u_result = session.exec(u_statement).first()
     user_id = u_result.id
 
-    # 删除project
+    # 删除project content 和 project
     p_statement = select(Project).where(Project.user_id == user_id)
     p_results = session.exec(p_statement)
+
+    for result in p_results:
+        p_content_statement = select(ProjectContent).where(ProjectContent.project_id == result.project_id)
+        p_content_results = session.exec(p_content_statement)
+        session.delete(p_content_results)
+        session.commit()
+        session.refresh(p_content_results)
     session.delete(p_results)
     session.commit()
     session.refresh(p_results)
@@ -98,6 +105,13 @@ def create_feedback(*, session: Session, feedback_create: FeedbackBase) -> Feedb
 
 def create_project(*, session: Session, project_create: ProjectBase) -> Project:
     db_obj = Project.model_validate(project_create)
+    session.add(db_obj)
+    session.commit()
+    session.refresh(db_obj)
+    return db_obj
+
+def create_project_content(*, session: Session, content_create: ProjectContentBase) -> ProjectContent:
+    db_obj = ProjectContent.model_validate(content_create)
     session.add(db_obj)
     session.commit()
     session.refresh(db_obj)

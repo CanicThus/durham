@@ -1,5 +1,6 @@
 import uuid
-from typing import List
+from enum import Enum
+from typing import List, Literal
 
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
@@ -85,7 +86,7 @@ class FeedbackBase(SQLModel):
     __tablename__ = "feedback"
 
     user_id: int | None = None
-    content:str | None = None
+    content: str | None = None
     photos:List[bytes] | None = Field(
         default=None,
         sa_column=Column(ARRAY(LargeBinary))
@@ -99,17 +100,27 @@ class ProjectBase(SQLModel):
     __tablename__ = "projects"
 
     user_id: int | None = None
-    content: dict | None = Field(
-        default=None,
-        sa_column=Column(JSONB)
-    )
+    name: str = Field(default="default_name")
 
 class Project(ProjectBase, table=True):
-    id: int = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
 
-class UpdateProject(SQLModel):
-    id: int | None = None
-    content: dict | None = Field(
-        default=None,
-        sa_column=Column(JSONB)
+class ContentTypeEnum(str, Enum):
+    TEXT = "text"
+    PICTURE = "picture"
+
+class ProjectContentBase(SQLModel):
+    __table_args__ = {"schema": settings.POSTGRES_SCHEMA}
+    __tablename__ = "project_contents"
+
+    project_id: int | None = None
+    sequence: int | None = None
+    content_type: ContentTypeEnum = Field(
+        sa_column_kwargs={"name": "type"},
+        default=ContentTypeEnum.TEXT
     )
+    text_content: str | None = None
+    picture_content: bytes | None = None
+
+class ProjectContent(ProjectContentBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
