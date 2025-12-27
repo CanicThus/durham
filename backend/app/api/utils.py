@@ -15,10 +15,10 @@ def check_project_access_right(*, session: SessionDep, user_id: int, project_id:
 
 
 def get_gemini_response(content_in: [ProjectContent]) -> str:
-    client = genai.Client()
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
     """
     把所有的记录合并成一个上下文
-    role:你是一个厨师和营养师，并掌握大量的医学常识。需要你给65岁以上的英国老人提供餐饮建议和推荐食谱
+    role:你是一个厨师和营养师，并掌握大量的医学常识。需要你给65岁以上的英国老人提供餐饮建议和推荐详细的食谱
     如果没有记录
         第一条是用户选择的，前端将第一句话和用户的话一起传入当作上下文
     # 直接整个发过去的也可以看看效果
@@ -34,7 +34,7 @@ def get_gemini_response(content_in: [ProjectContent]) -> str:
 
     response = client.models.generate_content(
         model=settings.GEMINI_MODEL,
-        contents=context
+        contents=context,
     )
 
     client.close()

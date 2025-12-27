@@ -106,7 +106,7 @@ class Project(ProjectBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
 
 class ProjectCreate(ProjectBase):
-    email: EmailStr = Field(max_length=255)
+    email: EmailStr | None = Field(max_length=255, default=None)
 
 
 class ContentTypeEnum(str, Enum):

@@ -91,6 +91,10 @@ def update_password_me(
 def update_Profile_me(
     *, session: SessionDep, body: UpdateProfile, current_user: CurrentUser
 ) -> Any:
+    """
+    跟新用户信息
+    目前用户信息在chat中无应用
+    """
     current_user.profile_photo = body.profile_photo
     session.add(current_user)
     session.commit()
@@ -100,6 +104,9 @@ def update_Profile_me(
 def update_Profile_me(
     *, session: SessionDep, body: UpdatePreference, current_user: CurrentUser
 ) -> Any:
+    """
+    更新用户头像
+    """
     current_user.preference = body.preference
     session.add(current_user)
     session.commit()

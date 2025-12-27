@@ -120,8 +120,10 @@ def create_project(*, session: Session, project_create: ProjectBase) -> Project:
 
 def get_project_next_sequence(*, session: Session, project_id: int) -> int:
     statement = select(ProjectContent).where(ProjectContent.project_id == project_id)
-    result = session.exec(statement).all()
-    return len(result) + 1
+    result = session.exec(statement)
+    if result:
+        return len(result.all()) + 1
+    return 1
 
 def add_project_content(*, session: Session, content_create: ProjectContentBase) -> ProjectContent:
     db_obj = ProjectContent.model_validate(content_create, update={"sequence": get_project_next_sequence(session=session, project_id=content_create.project_id)})
@@ -130,4 +132,16 @@ def add_project_content(*, session: Session, content_create: ProjectContentBase)
     session.refresh(db_obj)
     return db_obj
 
-
+def delete_project(*, session: Session, project_id: int) -> bool:
+    # 删除content
+    p_content_statement = select(ProjectContent).where(ProjectContent.project_id == project_id)
+    p_content_results = session.exec(p_content_statement)
+    session.delete(p_content_results)
+    session.commit()
+    session.refresh(p_content_results)
+    # 删除project
+    p_statement = select(Project).where(Project.id == project_id)
+    p_results = session.exec(p_statement)
+    session.delete(p_results)
+    session.commit()
+    session.refresh(p_results)
