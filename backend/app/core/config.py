@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     # FIRST_SUPERUSER: EmailStr
     # FIRST_SUPERUSER_PASSWORD: str
 
+    GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL:str | None = None
+
 
 
 

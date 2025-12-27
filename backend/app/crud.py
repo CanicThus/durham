@@ -52,6 +52,14 @@ def check_user_active(*, session: Session, email: str) -> bool | None:
         return True
     return False
 
+def get_user_email_by_id(*, session: Session, user_id: int) -> str | None:
+    statement = select(User).where(User.id == user_id)
+    result = session.exec(statement).first()
+    if result:
+        return result.email
+    return None
+
+
 def activate_user(*, session: Session, email: str) -> User | None:
     base_privilege: int = 1
 
@@ -110,9 +118,16 @@ def create_project(*, session: Session, project_create: ProjectBase) -> Project:
     session.refresh(db_obj)
     return db_obj
 
-def create_project_content(*, session: Session, content_create: ProjectContentBase) -> ProjectContent:
-    db_obj = ProjectContent.model_validate(content_create)
+def get_project_next_sequence(*, session: Session, project_id: int) -> int:
+    statement = select(ProjectContent).where(ProjectContent.project_id == project_id)
+    result = session.exec(statement).all()
+    return len(result) + 1
+
+def add_project_content(*, session: Session, content_create: ProjectContentBase) -> ProjectContent:
+    db_obj = ProjectContent.model_validate(content_create, update={"sequence": get_project_next_sequence(session=session, project_id=content_create.project_id)})
     session.add(db_obj)
     session.commit()
     session.refresh(db_obj)
     return db_obj
+
+
