@@ -46,6 +46,9 @@ class UpdatePassword(SQLModel):
 class UpdatePreference(SQLModel):
     new_preference: dict | None = Field(default=None, sa_column=Column(JSONB))
 
+class UpdateName(SQLModel):
+    name: str | None = None
+
 class UpdateProfile(SQLModel):
     mew_profile: bytes | None = Field(default=None, sa_column=Column(LargeBinary))
 

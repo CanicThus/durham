@@ -12,6 +12,7 @@ from app.models import (
     UserCreate,
     Message,
     UserPublic,
+    UpdateName,
 )
 from app.utils import send_email, generate_new_account_email, generate_email_token, verify_email_token
 from app.core.config import settings
@@ -40,7 +41,7 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Message:
     create_account_token = generate_email_token(user_in.email)
     if settings.emails_enabled and user_in.email:
         email_data = generate_new_account_email(
-            email_to=user_in.email, username=user_in.email,
+            email_to=user_in.email, username=user_in.name,
             password=user_in.password, token=create_account_token
         )
         send_email(
@@ -97,7 +98,7 @@ def update_Profile_me(
     current_user.profile_photo = body.profile_photo
     session.add(current_user)
     session.commit()
-    return Message(message="Profile photo update successfully")
+    return Message(message="Update Profile photo successfully")
 
 @router.patch("/me/preference", response_model=Message)
 def update_Preference_me(
@@ -110,7 +111,19 @@ def update_Preference_me(
     current_user.preference = body.preference
     session.add(current_user)
     session.commit()
-    return Message(message="preference update successfully")
+    return Message(message="Update preference successfully")
+
+@router.patch("/me/name", response_model=Message)
+def update_Name_me(
+    *, session: SessionDep, body: UpdateName, current_user: CurrentUser
+) -> Any:
+    """
+    update name
+    """
+    current_user.name = body.name
+    session.add(current_user)
+    session.commit()
+    return Message(message="Update name successfully")
 
 @router.delete("/me", response_model=Message)
 def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
