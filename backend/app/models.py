@@ -1,10 +1,11 @@
 import uuid
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Literal
 
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
-from sqlalchemy import Column, Integer, String, table, LargeBinary
+from sqlalchemy import Column, Integer, String, table, LargeBinary, DateTime
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from app.core.config import settings
 
@@ -125,6 +126,8 @@ class ProjectContentBase(SQLModel):
     )
     text_content: str | None = None
     picture_content: bytes | None = None
+    created_at: datetime | None = Field(sa_column=Column(DateTime(timezone=True),
+                                        nullable=False), default=datetime.now(timezone.utc))
 
 class ProjectContent(ProjectContentBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
