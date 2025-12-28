@@ -95,7 +95,7 @@ def update_Profile_me(
     """
     更新用户头像
     """
-    current_user.profile_photo = body.mew_profile
+    current_user.profile_photo = body.new_profile
     session.add(current_user)
     session.commit()
     return Message(message="Update Profile photo successfully")

@@ -50,7 +50,7 @@ class UpdateName(SQLModel):
     name: str | None = None
 
 class UpdateProfile(SQLModel):
-    mew_profile: bytes | None = Field(default=None, sa_column=Column(LargeBinary))
+    new_profile: bytes | None = Field(default=None, sa_column=Column(LargeBinary))
 
 # Database model, database table inferred from class name
 class User(UserBase, table=True):
