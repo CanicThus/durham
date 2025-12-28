@@ -1,6 +1,6 @@
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
-
+from select import select
 
 from app import crud
 from app.api.deps import SessionDep, CurrentUser
@@ -146,3 +146,12 @@ def read_user_me(current_user: CurrentUser) -> Any:
     Get current user.
     """
     return current_user
+
+@router.get("/me/get_preference")
+def read_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
+    """
+    Get current user preference.
+    return json
+    """
+    user = crud.get_user_by_email(session=session, email=current_user.email)
+    return user.preference
