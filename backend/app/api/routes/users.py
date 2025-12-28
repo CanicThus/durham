@@ -95,7 +95,7 @@ def update_Profile_me(
     """
     更新用户头像
     """
-    current_user.profile_photo = body.profile_photo
+    current_user.profile_photo = body.mew_profile
     session.add(current_user)
     session.commit()
     return Message(message="Update Profile photo successfully")
@@ -108,7 +108,7 @@ def update_Preference_me(
     跟新用户信息
     目前用户信息在chat中无应用
     """
-    current_user.preference = body.preference
+    current_user.preference = body.new_preference
     session.add(current_user)
     session.commit()
     return Message(message="Update preference successfully")
