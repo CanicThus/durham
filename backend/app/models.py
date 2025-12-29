@@ -91,6 +91,8 @@ class FeedbackBase(SQLModel):
 
     user_id: int | None = None
     content: str | None = None
+    rating: int | None = None
+    difficulty: str | None = None
     photos:List[bytes] | None = Field(
         default=None,
         sa_column=Column(ARRAY(LargeBinary))
