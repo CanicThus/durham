@@ -1,5 +1,5 @@
 import uuid
-from sqlmodel import Session, select, update
+from sqlmodel import Session, select, update, delete
 from typing import Any
 from app.core.security import get_password_hash, verify_password
 from app.models import User, UserCreate, Project, Feedback, FeedbackBase, ProjectBase, ProjectContentBase, ProjectContent
@@ -79,23 +79,19 @@ def delete_user(*, session: Session, email: str) -> bool | None:
     # 删除project content 和 project
     p_statement = select(Project).where(Project.user_id == user_id)
     p_results = session.exec(p_statement)
-
     for result in p_results:
-        p_content_statement = select(ProjectContent).where(ProjectContent.project_id == result.project_id)
-        p_content_results = session.exec(p_content_statement)
-        session.delete(p_content_results)
+        p_content_statement = delete(ProjectContent).where(ProjectContent.project_id == result.project_id)
+        session.exec(p_content_statement)
         session.commit()
-        session.refresh(p_content_results)
-    session.delete(p_results)
+
+    p_d_statement = delete(Project).where(Project.user_id == user_id)
+    session.exec(p_d_statement)
     session.commit()
-    session.refresh(p_results)
 
     # 删除feedback
-    f_statement = select(Feedback).where(Feedback.user_id == user_id)
-    f_results = session.exec(f_statement)
-    session.delete(f_results)
+    f_statement = delete(Feedback).where(Feedback.user_id == user_id)
+    session.exec(f_statement)
     session.commit()
-    session.refresh(f_results)
 
     # 删除user
     session.delete(u_result)
@@ -134,14 +130,13 @@ def add_project_content(*, session: Session, content_create: ProjectContentBase)
 
 def delete_project(*, session: Session, project_id: int) -> bool:
     # 删除content
-    p_content_statement = select(ProjectContent).where(ProjectContent.project_id == project_id)
-    p_content_results = session.exec(p_content_statement)
-    session.delete(p_content_results)
+    p_content_statement = delete(ProjectContent).where(ProjectContent.project_id == project_id)
+    session.exec(p_content_statement)
     session.commit()
-    session.refresh(p_content_results)
+
     # 删除project
-    p_statement = select(Project).where(Project.id == project_id)
-    p_results = session.exec(p_statement)
-    session.delete(p_results)
+    p_statement = delete(Project).where(Project.id == project_id)
+    session.exec(p_statement)
     session.commit()
-    session.refresh(p_results)
+
+    return True
