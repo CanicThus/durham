@@ -80,7 +80,7 @@ def delete_user(*, session: Session, email: str) -> bool | None:
     p_statement = select(Project).where(Project.user_id == user_id)
     p_results = session.exec(p_statement)
     for result in p_results:
-        p_content_statement = delete(ProjectContent).where(ProjectContent.project_id == result.project_id)
+        p_content_statement = delete(ProjectContent).where(ProjectContent.project_id == result.id)
         session.exec(p_content_statement)
         session.commit()
 
@@ -96,7 +96,6 @@ def delete_user(*, session: Session, email: str) -> bool | None:
     # 删除user
     session.delete(u_result)
     session.commit()
-    session.refresh(u_result)
 
     return True
 
