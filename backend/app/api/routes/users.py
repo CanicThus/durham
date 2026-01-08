@@ -76,12 +76,13 @@ def update_password_me(
     """
     Update own password.
     """
-    if not verify_password(body.current_password, current_user.password):
-        raise HTTPException(status_code=400, detail="Incorrect password")
-    if body.current_password == body.new_password:
-        raise HTTPException(
-            status_code=400, detail="New password cannot be the same as the current one"
-        )
+
+    # if not verify_password(body.current_password, body.new_password):
+    #     raise HTTPException(status_code=400, detail="Incorrect password")
+    # if body.current_password == body.new_password:
+    #     raise HTTPException(
+    #         status_code=400, detail="New password cannot be the same as the current one"
+    #     )
     hashed_password = get_password_hash(body.new_password)
     current_user.password = hashed_password
     session.add(current_user)
