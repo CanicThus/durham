@@ -1,3 +1,5 @@
+Before run backend, update .env path in backend/app/core/config.py
+
 web page
 http://127.0.0.1:8000/
 
