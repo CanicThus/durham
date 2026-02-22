@@ -182,7 +182,7 @@ env = rld.Recorder(
     smoothing=10,                       # track rolling averages (useful for plotting)
     video=True,                         # enable recording videos
     video_folder="videos",              # folder for videos
-    video_prefix="mwvy59-agent-video",  # prefix for videos (replace xxxx00 with your username)
+    video_prefix="agent-video",  # prefix for videos (replace xxxx00 with your username)
     logs=True,                          # keep logs
 )
 
@@ -270,4 +270,4 @@ for episode in range(max_episodes):
 env.close()
 
 # write log file (for coursework)
-env.write_log(folder="logs", file="mwvy59-agent-log.txt")  # replace xxxx00 with your username
+env.write_log(folder="logs", file="agent-log.txt")  # replace xxxx00 with your username
