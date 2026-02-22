@@ -24,7 +24,21 @@ Actor中间添加归一层
 
 训练添加warmup step 希望优化冷启动
 效果为 size池>1e4后更新actor，之前step>1e4更新critic
-05 更新不大
+05 更新不大 需要判断是否有效 感觉代码山重复了
+
+主循环添加噪声衰弱，减少后期的大动作探索
+希望曲线更平滑
+06 提早到150破0 但曲线波动很大，后期还能滑倒-200
+
+将噪声衰减从while中移除 改为eposide衰减
+0.9999->0.999
+无效
+
+去掉actor的归一化
+无用 可能是后期一整个eposide的值填满buff拿来训练导致直接失败的
+
+改为每个step train1
+稳定多了 但分数还是19x
 """
 
 # Actor Neural Network
@@ -33,9 +47,9 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
 
         self.l1 = nn.Linear(state_dim, 400)
-        self.ln1 = nn.LayerNorm(400)
+        # self.ln1 = nn.LayerNorm(400)
         self.l2 = nn.Linear(400, 300)
-        self.ln2 = nn.LayerNorm(300)
+        # self.ln2 = nn.LayerNorm(300)
         self.l3 = nn.Linear(300, action_dim)
 
         self.max_action = max_action
@@ -226,7 +240,8 @@ tracker = rld.InfoTracker()
 env.video = False
 
 start_timestep = 1e4
-std_noise = 0.2
+expl_noise = 0.2
+noise_decay = 0.999
 state_dim = env.observation_space.shape[0]
 action_dim = env.action_space.shape[0]
 max_action = float(env.action_space.high[0])
@@ -236,7 +251,8 @@ current_eps = 0
 # training procedure
 for episode in range(max_episodes):
 
-    timestep = 0
+    # timestep = 0
+    episode_reward = 0
     # recording statistics and video can be switched on and off (video recording is slow!)
     env.info = True  # usually tracking every episode is fine
     env.video = episode % 100 == 0  # record videos every 100 episodes (set BEFORE calling reset!)
@@ -255,9 +271,9 @@ for episode in range(max_episodes):
             action = env.action_space.sample()
         else:
             action = agent.sample_action(np.array(state))
-            if std_noise != 0:
-                shift_action = np.random.normal(0, std_noise, size=action_dim)
-                action = (action + shift_action).clip(low, high)
+            # 应用衰减后的噪声
+            noise = np.random.normal(0, expl_noise, size=action_dim)
+            action = (action + noise).clip(low, high)
 
         # take action in the environment
         observation, reward, terminated, truncated, info = env.step(action)
@@ -270,18 +286,22 @@ for episode in range(max_episodes):
         # update state
         state = observation
 
-        timestep += 1
+        episode_reward += reward
+        # timestep += 1
         current_eps += 1
 
-    # train the agent after each step
-    if current_eps >= start_timestep:
-        agent.train(timestep, warmup_steps=start_timestep)
+        # train the agent after each step
+        if current_eps >= start_timestep:
+            agent.train(1, warmup_steps=start_timestep)
+
+    # 噪声衰减
+    expl_noise = max(0.05, expl_noise * 0.99)
 
     # track and plot statistics
     tracker.track(info)
     if (episode + 1) % 10 == 0:
         tracker.plot(r_mean_=True, r_std_=True, r_sum=dict(linestyle=':', marker='x'))
-    print("episode:{}, \tReward:{}".format(episode, int(reward)))
+    print("episode:{}, \tReward:{}".format(episode, int(episode_reward)))
 # don't forget to close environment (e.g. triggers last video save)
 env.close()
 
