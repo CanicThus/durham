@@ -21,6 +21,10 @@ Actor中间添加归一层
 结果
 330破0 end19x
 有大幅的下滑 图04
+
+训练添加warmup step 希望优化冷启动
+效果为 size池>1e4后更新actor，之前step>1e4更新critic
+05 更新不大
 """
 
 # Actor Neural Network
@@ -134,7 +138,7 @@ class Agent(torch.nn.Module):
         self.replay_buf.add((state, observation, action, reward, done))
 
     def train(self, iterations, batch_size=100, discount=0.99, \
-              tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2):
+              tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2, warmup_steps=10000):
 
         replay_buffer = self.replay_buf
         for it in range(iterations):
@@ -168,7 +172,7 @@ class Agent(torch.nn.Module):
             self.critic_optimizer.step()
 
             # Delayed policy updates
-            if it % policy_freq == 0:
+            if len(self.replay_buf.storage) > warmup_steps and it % policy_freq == 0:
 
                 # Compute actor loss
                 actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
@@ -271,7 +275,7 @@ for episode in range(max_episodes):
 
     # train the agent after each step
     if current_eps >= start_timestep:
-        agent.train(timestep)
+        agent.train(timestep, warmup_steps=start_timestep)
 
     # track and plot statistics
     tracker.track(info)
