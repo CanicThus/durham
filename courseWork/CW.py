@@ -11,7 +11,17 @@ device = torch.device("cpu")
 """
 https://github.com/Rafael1s/Deep-Reinforcement-Learning-Algorithms/tree/master/BipedalWalker-TwinDelayed-DDPG%20(TD3)
 """
-
+"""
+整体评语
+上次
+近400epo上0 end119x end前有上下滑动
+图03
+改进
+Actor中间添加归一层
+结果
+330破0 end19x
+有大幅的下滑 图04
+"""
 
 # Actor Neural Network
 class Actor(nn.Module):
@@ -19,7 +29,9 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
 
         self.l1 = nn.Linear(state_dim, 400)
+        self.ln1 = nn.LayerNorm(400)
         self.l2 = nn.Linear(400, 300)
+        self.ln2 = nn.LayerNorm(300)
         self.l3 = nn.Linear(300, action_dim)
 
         self.max_action = max_action
