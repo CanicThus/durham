@@ -68,45 +68,40 @@ class Critic(nn.Module):
 
 
 # Expects tuples of (state, next_state, action, reward, done)
-class ReplayBuffer:
-    def __init__(self, state_dim, action_dim, max_size=int(1e6)):
+class ReplayBuffer(object):
+    def __init__(self, max_size=1e6):
+        self.storage = []
         self.max_size = max_size
         self.ptr = 0
-        self.size = 0
-
-        self.state = np.zeros((max_size, state_dim))
-        self.next_state = np.zeros((max_size, state_dim))
-        self.action = np.zeros((max_size, action_dim))
-        self.reward = np.zeros((max_size, 1))
-        self.done = np.zeros((max_size, 1))
 
     def add(self, data):
-        s, a, s2, r, d = data
-        self.state[self.ptr] = s
-        self.action[self.ptr] = a
-        self.next_state[self.ptr] = s2
-        self.reward[self.ptr] = r
-        self.done[self.ptr] = d
-
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
+        if len(self.storage) == self.max_size:
+            self.storage[int(self.ptr)] = data
+            self.ptr = (self.ptr + 1) % self.max_size
+        else:
+            self.storage.append(data)
 
     def sample(self, batch_size):
-        ind = np.random.randint(0, self.size, size=batch_size)
-        return (
-            self.state[ind],
-            self.next_state[ind],
-            self.action[ind],
-            self.reward[ind],
-            self.done[ind]
-        )
+        ind = np.random.randint(0, len(self.storage), size=batch_size)
+        x, y, u, r, d = [], [], [], [], []
+
+        for i in ind:
+            X, Y, U, R, D = self.storage[i]
+            x.append(np.array(X))
+            y.append(np.array(Y))
+            u.append(np.array(U))
+            r.append(np.array(R))
+            d.append(np.array(D))
+
+        return np.array(x), np.array(y), np.array(u), np.array(r).reshape(-1, 1), np.array(d).reshape(-1, 1)
+
 
 class Agent(torch.nn.Module):
     def __init__(self, env):
         super(Agent, self).__init__()
         self.discrete_act, self.discrete_obs, self.act_dim, self.obs_dim = rld.env_info(env)
         self.max_action = env.action_space.high[0]
-        self.replay_buf = ReplayBuffer(self.obs_dim, self.act_dim)
+        self.replay_buf = ReplayBuffer()
 
         self.actor = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
         self.actor_target = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
@@ -124,7 +119,7 @@ class Agent(torch.nn.Module):
         return self.actor(state).cpu().data.numpy().flatten()
 
     def put_data(self, state, action, observation, reward, done):
-        self.replay_buf.add((state, action, observation, reward, done))
+        self.replay_buf.add((state, observation, action, reward, done))
 
     def train(self, iterations, batch_size=100, discount=0.99, \
               tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2):
@@ -206,7 +201,7 @@ seed, observation, info = rld.seed_everything(42, env)
 
 # initialise agent
 agent = Agent(env)
-max_episodes = 2000
+max_episodes = 1000
 
 # track statistics for plotting
 tracker = rld.InfoTracker()
@@ -214,8 +209,8 @@ tracker = rld.InfoTracker()
 # switch video recording off (only switch on every x episodes as this is slow)
 env.video = False
 
-start_timestep = 1e3
-std_noise = 0.02
+start_timestep = 1e4
+std_noise = 0.2
 state_dim = env.observation_space.shape[0]
 action_dim = env.action_space.shape[0]
 max_action = float(env.action_space.high[0])
@@ -262,13 +257,13 @@ for episode in range(max_episodes):
         timestep += 1
         current_eps += 1
 
-        # train the agent after each step
+    # train the agent after each step
+    if current_eps >= start_timestep:
         agent.train(timestep)
 
     # track and plot statistics
     tracker.track(info)
     if (episode + 1) % 10 == 0:
-        print("enter")
         tracker.plot(r_mean_=True, r_std_=True, r_sum=dict(linestyle=':', marker='x'))
     print("episode:{}, \tReward:{}".format(episode, int(reward)))
 # don't forget to close environment (e.g. triggers last video save)
