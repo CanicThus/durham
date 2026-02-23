@@ -38,7 +38,25 @@ Actor中间添加归一层
 无用 可能是后期一整个eposide的值填满buff拿来训练导致直接失败的
 
 改为每个step train1
-稳定多了 但分数还是19x
+稳定多了 但分数还是19x 图07
+
+更新噪声衰减
+没什么变化 图08
+
+actor和critic增加归一层
+300上0 end 19x 没说你们变化
+
+更新学习率为3e-4
+图09 280破0 400震荡190->-130 end200
+
+train1 延迟更新未生效 batch_size=100-》256
+
+
+
+reward调整 -100-> -1 避免极端起伏
+
+Agent状态输入可以归一化
+
 """
 
 # Actor Neural Network
@@ -47,9 +65,9 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
 
         self.l1 = nn.Linear(state_dim, 400)
-        # self.ln1 = nn.LayerNorm(400)
+        self.ln1 = nn.LayerNorm(400)
         self.l2 = nn.Linear(400, 300)
-        # self.ln2 = nn.LayerNorm(300)
+        self.ln2 = nn.LayerNorm(300)
         self.l3 = nn.Linear(300, action_dim)
 
         self.max_action = max_action
@@ -68,12 +86,16 @@ class Critic(nn.Module):
 
         # Q1 architecture
         self.l1 = nn.Linear(state_dim + action_dim, 400)
+        self.ln1 = nn.LayerNorm(400)
         self.l2 = nn.Linear(400, 300)
+        self.ln2 = nn.LayerNorm(300)
         self.l3 = nn.Linear(300, 1)
 
         # Q2 architecture
         self.l4 = nn.Linear(state_dim + action_dim, 400)
+        self.ln4 = nn.LayerNorm(400)
         self.l5 = nn.Linear(400, 300)
+        self.ln5 = nn.LayerNorm(300)
         self.l6 = nn.Linear(300, 1)
 
     def forward(self, x, u):
@@ -136,13 +158,15 @@ class Agent(torch.nn.Module):
         self.actor = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
         self.actor_target = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
         self.actor_target.load_state_dict(self.actor.state_dict())
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters())
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-4)
 
         self.critic = Critic(self.obs_dim, self.act_dim).to(device)
         self.critic_target = Critic(self.obs_dim, self.act_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters())
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
 
+        self.delay_counter = -1
+        self.delay_freq = 1
     def sample_action(self, s):
         # return torch.rand(self.act_dim) * 2 - 1 # unifrom random in [-1, 1]
         state = torch.FloatTensor(s.reshape(1, -1)).to(device)
@@ -151,9 +175,10 @@ class Agent(torch.nn.Module):
     def put_data(self, state, action, observation, reward, done):
         self.replay_buf.add((state, observation, action, reward, done))
 
-    def train(self, iterations, batch_size=100, discount=0.99, \
-              tau=0.005, policy_noise=0.2, noise_clip=0.5, policy_freq=2, warmup_steps=10000):
+    def train(self, iterations, batch_size=256, discount=0.99, \
+              tau=0.005, policy_noise=0.2, noise_clip=0.5, warmup_steps=10000):
 
+        self.delay_counter += 1
         replay_buffer = self.replay_buf
         for it in range(iterations):
             # Sample replay buffer
@@ -186,7 +211,7 @@ class Agent(torch.nn.Module):
             self.critic_optimizer.step()
 
             # Delayed policy updates
-            if len(self.replay_buf.storage) > warmup_steps and it % policy_freq == 0:
+            if len(self.replay_buf.storage) > warmup_steps and self.delay_counter == self.delay_freq:
 
                 # Compute actor loss
                 actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
@@ -201,6 +226,8 @@ class Agent(torch.nn.Module):
 
                 for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                     target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+
+                self.delay_counter = -1
 
 
 env = rld.make("rldurham/Walker", render_mode="rgb_array")
@@ -295,7 +322,7 @@ for episode in range(max_episodes):
             agent.train(1, warmup_steps=start_timestep)
 
     # 噪声衰减
-    expl_noise = max(0.05, expl_noise * 0.99)
+    expl_noise = max(0.05, expl_noise * noise_decay)
 
     # track and plot statistics
     tracker.track(info)
