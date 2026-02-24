@@ -267,15 +267,16 @@ for episode in range(max_episodes):
         steps += 1
 
         # select the agent action
-        action = agent.sample_action(state)
+        action = (agent.sample_action(state) + np.random.normal(0, max_action * expl_noise, size=action_dim)
+                ).clip(-max_action, max_action)
 
         # take action in the environment
         observation, reward, terminated, truncated, info = env.step(action)
 
+
         # remember
         if reward <= -100:
-            r = -1
-            agent.put_data(replay_buffer, state, action, observation, r, True)
+            agent.put_data(replay_buffer, state, action, observation, -1, True)
         else:
             agent.put_data(replay_buffer, state, action, observation, reward, False)
 
