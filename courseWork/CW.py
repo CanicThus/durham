@@ -50,10 +50,11 @@ actor和critic增加归一层
 图09 280破0 400震荡190->-130 end200
 
 train1 延迟更新未生效 batch_size=100-》256
-
-
+崩 1000episode不上0
 
 reward调整 -100-> -1 避免极端起伏
+启动变慢 370破0 500收敛220 后续无提升
+极不稳定 后续220-》-100 图10
 
 Agent状态输入可以归一化
 
@@ -309,7 +310,11 @@ for episode in range(max_episodes):
         done = terminated or truncated
 
         # remember
-        agent.put_data(state, action, observation, reward, done)
+        if reward == -100:
+            print("----")
+            agent.put_data(state, action, observation, -1, done)
+        else:
+            agent.put_data(state, action, observation, reward, done)
         # update state
         state = observation
 
