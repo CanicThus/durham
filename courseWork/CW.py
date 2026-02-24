@@ -63,6 +63,9 @@ reward调整 -100-> -1 避免极端起伏
 350破0 ebd22x
 差不了多少
 
+reward + (done * discount * target_Q)  ---》》》 target_Q = reward + (discount * target_Q).detach()
+180破0 end230 图11
+
 Agent状态输入可以归一化
 这个再上不去可以看train的算法了
 """
@@ -160,12 +163,12 @@ class Agent(torch.nn.Module):
         self.actor = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
         self.actor_target = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
         self.actor_target.load_state_dict(self.actor.state_dict())
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-4)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-4)
 
         self.critic = Critic(self.obs_dim, self.act_dim).to(device)
         self.critic_target = Critic(self.obs_dim, self.act_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=1e-4)
 
         self.delay_counter = -1
         self.delay_freq = 1
@@ -199,7 +202,7 @@ class Agent(torch.nn.Module):
             # Compute the target Q value
             target_Q1, target_Q2 = self.critic_target(next_state, next_action)
             target_Q = torch.min(target_Q1, target_Q2)
-            target_Q = reward + (done * discount * target_Q).detach()
+            target_Q = reward + (discount * target_Q).detach()
 
             # Get current Q estimates
             current_Q1, current_Q2 = self.critic(state, action)
@@ -311,7 +314,7 @@ for episode in range(max_episodes):
         done = terminated or truncated
 
         # remember
-        if reward == -100:
+        if reward <= -100:
             agent.put_data(state, action, observation, -1, done)
         else:
             agent.put_data(state, action, observation, reward, done)
