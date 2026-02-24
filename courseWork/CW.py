@@ -59,8 +59,12 @@ reward调整 -100-> -1 避免极端起伏
 实现模型内部归一化
 370---0 end235 少量提升
 
-Agent状态输入可以归一化
+去掉模型内部归一化
+350破0 ebd22x
+差不了多少
 
+Agent状态输入可以归一化
+这个再上不去可以看train的算法了
 """
 
 # Actor Neural Network
@@ -69,16 +73,14 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
 
         self.l1 = nn.Linear(state_dim, 400)
-        self.ln1 = nn.LayerNorm(400)
         self.l2 = nn.Linear(400, 300)
-        self.ln2 = nn.LayerNorm(300)
         self.l3 = nn.Linear(300, action_dim)
 
         self.max_action = max_action
 
     def forward(self, x):
-        x = F.relu(self.ln1(self.l1(x)))
-        x = F.relu(self.ln2(self.l2(x)))
+        x = F.relu(self.l1(x))
+        x = F.relu(self.l2(x))
         x = self.max_action * torch.tanh(self.l3(x))
         return x
 
@@ -90,35 +92,31 @@ class Critic(nn.Module):
 
         # Q1 architecture
         self.l1 = nn.Linear(state_dim + action_dim, 400)
-        self.ln1 = nn.LayerNorm(400)
         self.l2 = nn.Linear(400, 300)
-        self.ln2 = nn.LayerNorm(300)
         self.l3 = nn.Linear(300, 1)
 
         # Q2 architecture
         self.l4 = nn.Linear(state_dim + action_dim, 400)
-        self.ln4 = nn.LayerNorm(400)
         self.l5 = nn.Linear(400, 300)
-        self.ln5 = nn.LayerNorm(300)
         self.l6 = nn.Linear(300, 1)
 
     def forward(self, x, u):
         xu = torch.cat([x, u], 1)
 
-        x1 = F.relu(self.ln1(self.l1(xu)))
-        x1 = F.relu(self.ln2(self.l2(x1)))
+        x1 = F.relu(self.l1(xu))
+        x1 = F.relu(self.l2(x1))
         x1 = self.l3(x1)
 
-        x2 = F.relu(self.ln4(self.l4(xu)))
-        x2 = F.relu(self.ln5(self.l5(x2)))
+        x2 = F.relu(self.l4(xu))
+        x2 = F.relu(self.l5(x2))
         x2 = self.l6(x2)
         return x1, x2
 
     def Q1(self, x, u):
         xu = torch.cat([x, u], 1)
 
-        x1 = F.relu(self.ln1(self.l1(xu)))
-        x1 = F.relu(self.ln2(self.l2(x1)))
+        x1 = F.relu(self.l1(xu))
+        x1 = F.relu(self.l2(x1))
         x1 = self.l3(x1)
         return x1
 
@@ -180,7 +178,7 @@ class Agent(torch.nn.Module):
         self.replay_buf.add((state, observation, action, reward, done))
 
     def train(self, iterations, batch_size=256, discount=0.99, \
-              tau=0.005, policy_noise=0.2, noise_clip=0.5, warmup_steps=10000):
+              tau=0.005, policy_noise=0.2, noise_clip=0.5):
 
         self.delay_counter += 1
         replay_buffer = self.replay_buf
@@ -215,7 +213,7 @@ class Agent(torch.nn.Module):
             self.critic_optimizer.step()
 
             # Delayed policy updates
-            if len(self.replay_buf.storage) > warmup_steps and self.delay_counter == self.delay_freq:
+            if self.delay_counter == self.delay_freq:
 
                 # Compute actor loss
                 actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
@@ -326,7 +324,7 @@ for episode in range(max_episodes):
 
         # train the agent after each step
         if current_eps >= start_timestep:
-            agent.train(1, warmup_steps=start_timestep)
+            agent.train(1)
 
     # 噪声衰减
     expl_noise = max(0.05, expl_noise * noise_decay)
