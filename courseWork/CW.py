@@ -56,6 +56,9 @@ reward调整 -100-> -1 避免极端起伏
 启动变慢 370破0 500收敛220 后续无提升
 极不稳定 后续220-》-100 图10
 
+实现模型内部归一化
+370---0 end235 少量提升
+
 Agent状态输入可以归一化
 
 """
@@ -74,8 +77,8 @@ class Actor(nn.Module):
         self.max_action = max_action
 
     def forward(self, x):
-        x = F.relu(self.l1(x))
-        x = F.relu(self.l2(x))
+        x = F.relu(self.ln1(self.l1(x)))
+        x = F.relu(self.ln2(self.l2(x)))
         x = self.max_action * torch.tanh(self.l3(x))
         return x
 
@@ -102,20 +105,20 @@ class Critic(nn.Module):
     def forward(self, x, u):
         xu = torch.cat([x, u], 1)
 
-        x1 = F.relu(self.l1(xu))
-        x1 = F.relu(self.l2(x1))
+        x1 = F.relu(self.ln1(self.l1(xu)))
+        x1 = F.relu(self.ln2(self.l2(x1)))
         x1 = self.l3(x1)
 
-        x2 = F.relu(self.l4(xu))
-        x2 = F.relu(self.l5(x2))
+        x2 = F.relu(self.ln4(self.l4(xu)))
+        x2 = F.relu(self.ln5(self.l5(x2)))
         x2 = self.l6(x2)
         return x1, x2
 
     def Q1(self, x, u):
         xu = torch.cat([x, u], 1)
 
-        x1 = F.relu(self.l1(xu))
-        x1 = F.relu(self.l2(x1))
+        x1 = F.relu(self.ln1(self.l1(xu)))
+        x1 = F.relu(self.ln2(self.l2(x1)))
         x1 = self.l3(x1)
         return x1
 
@@ -311,7 +314,6 @@ for episode in range(max_episodes):
 
         # remember
         if reward == -100:
-            print("----")
             agent.put_data(state, action, observation, -1, done)
         else:
             agent.put_data(state, action, observation, reward, done)
