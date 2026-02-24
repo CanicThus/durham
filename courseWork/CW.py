@@ -70,6 +70,16 @@ reward + (done * discount * target_Q)  ---》》》 target_Q = reward + (discoun
 恢复Bellman 方程，取消奖励裁剪
 350破0  end210 图12
 
+put_data时done由 done = terminated or truncated 改为 float(terminated)
+理由：
+BipedalWalker 默认最大步数是 1600 步 truncated = True（步数/时间到了，强行截断），而 terminated 依然是 False
+这时，如果传done认为游戏彻底结束 未来收益为 0 使得Agent越到后期越不敢大步走
+结果
+烂了 上不了0 
+$$TargetQ = Reward + \gamma \cdot (1 - Done) \cdot TargetQ_{next}$$ done在机器人不倒地时，truncated传进来1（超时） 计算结果为0
+
+恢复，调整学习率
+
 Agent状态输入可以归一化
 这个再上不去可以看train的算法了
 """
@@ -167,12 +177,12 @@ class Agent(torch.nn.Module):
         self.actor = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
         self.actor_target = Actor(self.obs_dim, self.act_dim, self.max_action).to(device)
         self.actor_target.load_state_dict(self.actor.state_dict())
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-4)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-3)
 
         self.critic = Critic(self.obs_dim, self.act_dim).to(device)
         self.critic_target = Critic(self.obs_dim, self.act_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=1e-4)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=1e-3)
 
         self.delay_counter = -1
         self.delay_freq = 1
