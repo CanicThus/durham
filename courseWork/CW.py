@@ -66,6 +66,10 @@ reward调整 -100-> -1 避免极端起伏
 reward + (done * discount * target_Q)  ---》》》 target_Q = reward + (discount * target_Q).detach()
 180破0 end230 图11
 
+
+恢复Bellman 方程，取消奖励裁剪
+350破0  end210 图12
+
 Agent状态输入可以归一化
 这个再上不去可以看train的算法了
 """
@@ -202,7 +206,7 @@ class Agent(torch.nn.Module):
             # Compute the target Q value
             target_Q1, target_Q2 = self.critic_target(next_state, next_action)
             target_Q = torch.min(target_Q1, target_Q2)
-            target_Q = reward + (discount * target_Q).detach()
+            target_Q = reward + (done * discount * target_Q).detach()
 
             # Get current Q estimates
             current_Q1, current_Q2 = self.critic(state, action)
@@ -314,10 +318,11 @@ for episode in range(max_episodes):
         done = terminated or truncated
 
         # remember
-        if reward <= -100:
-            agent.put_data(state, action, observation, -1, done)
-        else:
-            agent.put_data(state, action, observation, reward, done)
+        # if reward <= -100:
+        #     agent.put_data(state, action, observation, -1, done)
+        # else:
+        #     agent.put_data(state, action, observation, reward, done)
+        agent.put_data(state, action, observation, reward, done)
         # update state
         state = observation
 
@@ -330,7 +335,7 @@ for episode in range(max_episodes):
             agent.train(1)
 
     # 噪声衰减
-    expl_noise = max(0.05, expl_noise * noise_decay)
+    expl_noise = max(0.1, expl_noise * noise_decay)
 
     # track and plot statistics
     tracker.track(info)
