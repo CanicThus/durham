@@ -67,41 +67,28 @@ class Actor(nn.Module):
 
 
 class Q_Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, net_width):
+    def __init__(self, state_dim, action_dim, net_width, num_quantiles=25, num_critics=2):
         super(Q_Critic, self).__init__()
 
-        # Q1 architecture
-        self.l1 = nn.Linear(state_dim + action_dim, net_width)
-        self.l2 = nn.Linear(net_width, net_width)
-        self.l3 = nn.Linear(net_width, 1)
+        self.num_quantiles = num_quantiles
+        self.num_critics = num_critics
 
-        # Q2 architecture
-        self.l4 = nn.Linear(state_dim + action_dim, net_width)
-        self.l5 = nn.Linear(net_width, net_width)
-        self.l6 = nn.Linear(net_width, 1)
-
+        self.q_networks = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(state_dim + action_dim, net_width),
+                nn.ReLU(),
+                nn.Linear(net_width, net_width),
+                nn.ReLU(),
+                nn.Linear(net_width, num_quantiles)
+            ) for _ in range(num_critics)
+        ])
 
     def forward(self, state, action):
         sa = torch.cat([state, action], 1)
 
-        q1 = F.relu(self.l1(sa))
-        q1 = F.relu(self.l2(q1))
-        q1 = self.l3(q1)
-
-        q2 = F.relu(self.l4(sa))
-        q2 = F.relu(self.l5(q2))
-        q2 = self.l6(q2)
-        return q1, q2
-
-
-    def Q1(self, state, action):
-        sa = torch.cat([state, action], 1)
-
-        q1 = F.relu(self.l1(sa))
-        q1 = F.relu(self.l2(q1))
-        q1 = self.l3(q1)
-        return q1
-
+        # 将每个 critic 的输出叠加，形状为: (batch_size, num_critics, num_quantiles)
+        quantiles = torch.stack([net(sa) for net in self.q_networks], dim=1)
+        return quantiles
 
 class Agent(torch.nn.Module):
     def __init__(self,
@@ -113,14 +100,17 @@ class Agent(torch.nn.Module):
         net_width=128,
         a_lr=1e-4,
         c_lr=1e-4,
-        Q_batchsize = 256):
+        Q_batchsize=256,
+        num_quantiles=25,
+        num_critics=2,
+        drop_quantiles=5):
         super(Agent, self).__init__()
 
         self.actor = Actor(state_dim, action_dim, net_width, max_action).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=a_lr)
         self.actor_target = copy.deepcopy(self.actor)
 
-        self.q_critic = Q_Critic(state_dim, action_dim, net_width).to(device)
+        self.q_critic = Q_Critic(state_dim, action_dim, net_width, num_quantiles, num_critics).to(device)
         self.q_critic_optimizer = torch.optim.Adam(self.q_critic.parameters(), lr=c_lr)
         self.q_critic_target = copy.deepcopy(self.q_critic)
 
@@ -134,6 +124,10 @@ class Agent(torch.nn.Module):
         self.Q_batchsize = Q_batchsize
         self.delay_counter = -1
         self.delay_freq = 1
+        # TQC 超参数
+        self.num_quantiles = num_quantiles
+        self.num_critics = num_critics
+        self.drop_quantiles = drop_quantiles
 
     def sample_action(self, s):
         # return torch.rand(self.act_dim) * 2 - 1 # unifrom random in [-1, 1]
@@ -144,6 +138,7 @@ class Agent(torch.nn.Module):
 
     def train(self, replay_buffer):
         self.delay_counter += 1
+
         with torch.no_grad():
             s, a, r, s_prime, dead_mask = replay_buffer.sample(self.Q_batchsize)
             noise = (torch.randn_like(a) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
@@ -152,28 +147,53 @@ class Agent(torch.nn.Module):
             ).clamp(-self.max_action, self.max_action)
 
         # Compute the target Q value
-        target_Q1, target_Q2 = self.q_critic_target(s_prime, smoothed_target_a)
-        target_Q = torch.min(target_Q1, target_Q2)
+        z_target = self.q_critic_target(s_prime, smoothed_target_a)
+        z_target_flatten = z_target.view(self.Q_batchsize, -1)
+        sorted_z_target, _ = torch.sort(z_target_flatten, dim=1)
+        kept_z_target = sorted_z_target[:, : -self.drop_quantiles]
+
         '''DEAD OR NOT'''
         if self.env_with_Dead:
-            target_Q = r + (1 - dead_mask) * self.gamma * target_Q  # env with dead
+            target_Q = r + (1 - dead_mask) * self.gamma * kept_z_target  # env with dead
         else:
-            target_Q = r + self.gamma * target_Q  # env without dead
+            target_Q = r + self.gamma * kept_z_target  # env without dead
 
         # Get current Q estimates
-        current_Q1, current_Q2 = self.q_critic(s, a)
+        current_z = self.q_critic(s, a)
 
-        # Compute critic loss
-        q_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
+        # target_Q 形状扩展至 (batch, 1, 1, num_kept_quantiles)
+        target_Q_ext = target_Q.unsqueeze(1).unsqueeze(1)
+        # current_z 形状扩展至 (batch, num_critics, num_quantiles, 1)
+        current_z_ext = current_z.unsqueeze(-1)
+        # 差值计算
+        td_error = target_Q_ext - current_z_ext
+        # Huber Loss 计算
+        kappa = 1.0  # Huber loss 的阈值
+        abs_td_error = torch.abs(td_error)
+        huber_loss = torch.where(abs_td_error <= kappa, 0.5 * abs_td_error ** 2, kappa * (abs_td_error - 0.5 * kappa))
+
+        # 计算分位数权重Tau
+        tau = torch.arange(1, self.num_quantiles + 1,
+                           device=device).float() / self.num_quantiles - 0.5 / self.num_quantiles
+        tau = tau.view(1, 1, self.num_quantiles, 1)
+
+        # Quantile Loss公式: |tau - I(td_error < 0)| * huber_loss
+        quantile_loss = torch.abs(tau - (td_error.detach() < 0).float()) * huber_loss
+
+        # 在 kept_quantiles 维度求均值，在 quantiles 维度求和，在 critics 和 batch 维度求均值
+        q_loss = quantile_loss.mean(dim=3).sum(dim=2).mean()
 
         # Optimize the q_critic
         self.q_critic_optimizer.zero_grad()
         q_loss.backward()
         self.q_critic_optimizer.step()
 
+        # delay update actor
         if self.delay_counter == self.delay_freq:
-            # Update Actor
-            a_loss = -self.q_critic.Q1(s, self.actor(s)).mean()
+
+            q_actor_quantiles = self.q_critic(s, self.actor(s))
+            a_loss = -q_actor_quantiles.mean()
+
             self.actor_optimizer.zero_grad()
             a_loss.backward()
             self.actor_optimizer.step()
@@ -232,6 +252,9 @@ kwargs = {
     "a_lr": 1e-4,
     "c_lr": 1e-4,
     "Q_batchsize": 256,
+    "num_quantiles" : 25,
+    "num_critics" : 2,
+    "drop_quantiles" : 5,
 }
 max_episodes = 1000
 
