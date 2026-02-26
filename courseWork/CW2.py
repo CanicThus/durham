@@ -142,9 +142,6 @@ class Agent(torch.nn.Module):
             a = self.actor(state)
         return a.cpu().numpy().flatten()
 
-    def put_data(self, replay_buffer, state, action, observation, reward, done):
-        replay_buffer.add(state, action, reward, observation, done)
-
     def train(self, replay_buffer):
         self.delay_counter += 1
         with torch.no_grad():
@@ -276,9 +273,9 @@ for episode in range(max_episodes):
 
         # remember
         if reward <= -100:
-            agent.put_data(replay_buffer, state, action, observation, -1, True)
+            replay_buffer.add(state, action, -100, observation, True)
         else:
-            agent.put_data(replay_buffer, state, action, observation, reward, False)
+            replay_buffer.add(state, action, reward, observation, False)
 
         # check whether done
         done = terminated or truncated
@@ -293,7 +290,7 @@ for episode in range(max_episodes):
     tracker.track(info)
     if (episode + 1) % 10 == 0:
         tracker.plot(r_mean_=True, r_std_=True, r_sum=dict(linestyle=':', marker='x'))
-    print("episode:{}, \tReward:{}".format(episode, int(ep_r)))
+    print('episode:', episode, 'score:', ep_r, 'step:', steps)
 # don't forget to close environment (e.g. triggers last video save)
 env.close()
 
