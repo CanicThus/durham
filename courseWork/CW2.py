@@ -67,7 +67,7 @@ class Actor(nn.Module):
 
 
 class Q_Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, net_width, num_quantiles=25, num_critics=2):
+    def __init__(self, state_dim, action_dim, net_width, num_quantiles=25, num_critics=2, dropout_rate=0.01):
         super(Q_Critic, self).__init__()
 
         self.num_quantiles = num_quantiles
@@ -76,9 +76,13 @@ class Q_Critic(nn.Module):
         self.q_networks = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(state_dim + action_dim, net_width),
+                nn.LayerNorm(net_width),
                 nn.ReLU(),
+                nn.Dropout(p=dropout_rate),
                 nn.Linear(net_width, net_width),
+                nn.LayerNorm(net_width),
                 nn.ReLU(),
+                nn.Dropout(p=dropout_rate),
                 nn.Linear(net_width, num_quantiles)
             ) for _ in range(num_critics)
         ])
@@ -103,14 +107,15 @@ class Agent(torch.nn.Module):
         Q_batchsize=256,
         num_quantiles=25,
         num_critics=2,
-        drop_quantiles=5):
+        drop_quantiles=5,
+        dropout_rate=0.01):
         super(Agent, self).__init__()
 
         self.actor = Actor(state_dim, action_dim, net_width, max_action).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=a_lr)
         self.actor_target = copy.deepcopy(self.actor)
 
-        self.q_critic = Q_Critic(state_dim, action_dim, net_width, num_quantiles, num_critics).to(device)
+        self.q_critic = Q_Critic(state_dim, action_dim, net_width, num_quantiles, num_critics, dropout_rate).to(device)
         self.q_critic_optimizer = torch.optim.Adam(self.q_critic.parameters(), lr=c_lr)
         self.q_critic_target = copy.deepcopy(self.q_critic)
 
@@ -128,6 +133,7 @@ class Agent(torch.nn.Module):
         self.num_quantiles = num_quantiles
         self.num_critics = num_critics
         self.drop_quantiles = drop_quantiles
+        self.dropout_rate = dropout_rate
 
     def sample_action(self, s):
         # return torch.rand(self.act_dim) * 2 - 1 # unifrom random in [-1, 1]
@@ -248,13 +254,14 @@ kwargs = {
     "action_dim": action_dim,
     "max_action": max_action,
     "gamma": 0.99,
-    "net_width": 200,
+    "net_width": 256,
     "a_lr": 1e-4,
     "c_lr": 1e-4,
     "Q_batchsize": 256,
     "num_quantiles" : 25,
-    "num_critics" : 2,
-    "drop_quantiles" : 5,
+    "num_critics" : 5,
+    "drop_quantiles" : 40,
+    "dropout_rate" : 0.01,
 }
 max_episodes = 1000
 
@@ -307,7 +314,9 @@ for episode in range(max_episodes):
 
         # train the agent after each step
         if replay_buffer.size > 2000:
-            agent.train(replay_buffer)
+            UTDratio = 2
+            for _ in range(UTDratio):
+                agent.train(replay_buffer)
 
     # track and plot statistics
     tracker.track(info)
