@@ -9,8 +9,10 @@ import numpy as np
 
 import rldurham as rld
 
+from collections import deque
+
 class ReplayBuffer(object):
-    def __init__(self, state_dim, action_dim, max_size=int(1e6)):
+    def __init__(self, state_dim, action_dim, max_size=int(1e6), n_step=3, gamma=0.99):
         self.max_size = max_size
         self.ptr = 0
         self.size = 0
@@ -21,18 +23,47 @@ class ReplayBuffer(object):
         self.next_state = np.zeros((max_size, state_dim))
         self.dead = np.zeros((max_size, 1))
 
+        # n-step 参数与临时缓存
+        self.n_step = n_step
+        self.gamma = gamma
+        self.n_step_buffer = deque(maxlen=self.n_step)
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
     def add(self, state, action, reward, next_state, dead):
+        self.n_step_buffer.append((state, action, reward, next_state, dead))
+
+        if len(self.n_step_buffer) == self.n_step:
+            s, a, r, s_prime, d = self._get_n_step_info()
+            self._store(s, a, r, s_prime, d)
+
+    def _store(self, state, action, reward, next_state, dead):
         self.state[self.ptr] = state
         self.action[self.ptr] = action
         self.reward[self.ptr] = reward
         self.next_state[self.ptr] = next_state
-        self.dead[self.ptr] = dead #0,0,0，...，1
+        self.dead[self.ptr] = dead
 
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
+
+    def _get_n_step_info(self):
+        state, action, reward, next_state, dead = self.n_step_buffer[-1]
+        reward = 0
+        for i, transition in enumerate(self.n_step_buffer):
+            s, a, r, s_prime, d = transition
+            reward += (self.gamma ** i) * r
+            if d:
+                # 如果遇到 dead 状态，直接截断，后续奖励视作0
+                return s, a, r, s_prime, d
+        return state, action, reward, next_state, dead
+
+    def finish_episode(self):
+        # 回合结束时，清空 n_step_buffer
+        while len(self.n_step_buffer) > 0:
+            s, a, r, s_prime, d = self._get_n_step_info()
+            self._store(s, a, r, s_prime, d)
+            self.n_step_buffer.popleft()
 
 
     def sample(self, batch_size):
@@ -108,7 +139,8 @@ class Agent(torch.nn.Module):
         num_quantiles=25,
         num_critics=2,
         drop_quantiles=5,
-        dropout_rate=0.01):
+        dropout_rate=0.01,
+        n_step=3):
         super(Agent, self).__init__()
 
         self.actor = Actor(state_dim, action_dim, net_width, max_action).to(device)
@@ -135,6 +167,8 @@ class Agent(torch.nn.Module):
         self.drop_quantiles = drop_quantiles
         self.dropout_rate = dropout_rate
 
+        self.n_step = n_step
+
     def sample_action(self, s):
         # return torch.rand(self.act_dim) * 2 - 1 # unifrom random in [-1, 1]
         with torch.no_grad():
@@ -160,9 +194,9 @@ class Agent(torch.nn.Module):
 
         '''DEAD OR NOT'''
         if self.env_with_Dead:
-            target_Q = r + (1 - dead_mask) * self.gamma * kept_z_target  # env with dead
+            target_Q = r + (1 - dead_mask) * (self.gamma ** self.n_step) * kept_z_target  # env with dead
         else:
-            target_Q = r + self.gamma * kept_z_target  # env without dead
+            target_Q = r + (self.gamma ** self.n_step) * kept_z_target  # env without dead
 
         # Get current Q estimates
         current_z = self.q_critic(s, a)
@@ -262,12 +296,16 @@ kwargs = {
     "num_critics" : 5,
     "drop_quantiles" : 40,
     "dropout_rate" : 0.01,
+    "n_step": 3,
 }
 max_episodes = 1000
 
+buffer_n_step=3
+buffer_gamma = 0.99
+
 # initialise agent, replay_buffer
 agent = Agent(**kwargs)
-replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(1e6))
+replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(1e6), n_step=buffer_n_step, gamma=buffer_gamma)
 
 # track statistics for plotting
 tracker = rld.InfoTracker()
@@ -311,6 +349,9 @@ for episode in range(max_episodes):
         done = terminated or truncated
         state = observation
         ep_r += reward
+
+        if done:
+            replay_buffer.finish_episode()
 
         # train the agent after each step
         if replay_buffer.size > 2000:
