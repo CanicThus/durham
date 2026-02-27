@@ -96,7 +96,6 @@ class Actor(nn.Module):
         a = torch.tanh(self.l3(a)) * self.maxaction
         return a
 
-
 class Q_Critic(nn.Module):
     def __init__(self, state_dim, action_dim, net_width, num_quantiles=25, num_critics=2, dropout_rate=0.01):
         super(Q_Critic, self).__init__()
@@ -247,6 +246,100 @@ class Agent(torch.nn.Module):
 
             self.delay_counter = -1
 
+class ERL_Manager:
+    def __init__(self, state_dim, action_dim, net_width, max_action, pop_size=5, mutation_rate=0.1,
+                 mutation_power=0.05):
+        self.pop_size = pop_size
+        self.mutation_rate = mutation_rate
+        self.mutation_power = mutation_power
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # 初始化演化种群
+        self.population = [Actor(state_dim, action_dim, net_width, max_action).to(self.device) for _ in range(pop_size)]
+
+        self.env = rld.make("rldurham/Walker", render_mode="rgb_array")
+        self.env.reset(seed=42)
+        rld.render(self.env)
+
+    def mutate(self, actor):
+        """变异算子：为权重添加高斯噪声"""
+        child = copy.deepcopy(actor)
+        with torch.no_grad():
+            for param in child.parameters():
+                if len(param.shape) >= 1:
+                    mask = (torch.rand(param.shape, device=self.device) < self.mutation_rate).float()
+                    noise = torch.randn(param.shape, device=self.device) * self.mutation_power
+                    param.data.add_(mask * noise)
+        return child
+
+    def crossover(self, parent1, parent2):
+        """交叉算子：从两个父代中随机继承权重参数"""
+        child = copy.deepcopy(parent1)
+        with torch.no_grad():
+            for param_c, param_1, param_2 in zip(child.parameters(), parent1.parameters(), parent2.parameters()):
+                mask = (torch.rand(param_c.shape, device=self.device) < 0.5).float()
+                param_c.data.copy_(mask * param_1.data + (1 - mask) * param_2.data)
+        return child
+
+    def _evaluate_actor(self, actor, env, replay_buffer):
+        """评估单个 Actor 并在探索时填充 Replay Buffer"""
+        state, info = env.reset()
+        ep_r = 0
+        done = False
+        while not done:
+            with torch.no_grad():
+                s = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
+                action = actor(s).cpu().numpy().flatten()
+
+            next_state, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+            if reward <= -100:
+                replay_buffer.add(state, action, -100, next_state, True)
+            else:
+                replay_buffer.add(state, action, reward, next_state, False)
+
+            state = next_state
+            ep_r += reward
+
+            if done:
+                replay_buffer.finish_episode()
+        return ep_r
+
+    def evaluate_population(self, replay_buffer):
+        """评估整个种群，返回所有个体的适应度(Fitnesses)"""
+        fitnesses = []
+        for actor in self.population:
+            fit = self._evaluate_actor(actor, self.env, replay_buffer)
+            fitnesses.append(fit)
+        return fitnesses
+
+    def evolve(self, fitnesses, rl_agent_actor, generation):
+        """优胜劣汰及基因演化，并定期同步 RL Agent 的知识"""
+        sorted_indices = np.argsort(fitnesses)[::-1]
+        best_actors = [self.population[i] for i in sorted_indices]
+        new_population = []
+
+        # 1. 精英保留 (Elitism): 直接将表现最好的原封不动放入下一代
+        new_population.append(copy.deepcopy(best_actors[0]))
+
+        # 2. 知识共享 (Sync): 周期性地将基于梯度的 RL Agent 加入种群以参与演化
+        if generation % 5 == 0:
+            new_population.append(copy.deepcopy(rl_agent_actor))
+        else:
+            new_population.append(self.mutate(best_actors[0]))
+
+        # 3. 交叉与变异填满剩余的种群席位
+        while len(new_population) < self.pop_size:
+            p1 = best_actors[np.random.randint(0, max(2, self.pop_size // 2))]
+            p2 = best_actors[np.random.randint(0, max(2, self.pop_size // 2))]
+
+            child = self.crossover(p1, p2)
+            child = self.mutate(child)
+            new_population.append(child)
+
+        self.population = new_population
+        return fitnesses[sorted_indices[0]]  # 返回种群中的最高分
 
 env = rld.make("rldurham/Walker", render_mode="rgb_array")
 # env = rld.make("rldurham/Walker", render_mode="rgb_array", hardcore=True) # only attempt this when your agent has solved the non-hardcore version
@@ -307,6 +400,16 @@ buffer_gamma = 0.99
 agent = Agent(**kwargs)
 replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(1e6), n_step=buffer_n_step, gamma=buffer_gamma)
 
+erl_manager = ERL_Manager(
+    state_dim=state_dim,
+    action_dim=action_dim,
+    net_width=kwargs["net_width"],
+    max_action=max_action,
+    pop_size=5,
+    mutation_rate=0.1,
+    mutation_power=0.05
+)
+
 # track statistics for plotting
 tracker = rld.InfoTracker()
 
@@ -315,6 +418,8 @@ env.video = False
 
 # training procedure
 for episode in range(max_episodes):
+
+    fitnesses = erl_manager.evaluate_population(replay_buffer)
 
     # recording statistics and video can be switched on and off (video recording is slow!)
     env.info = True  # usually tracking every episode is fine
@@ -358,6 +463,8 @@ for episode in range(max_episodes):
             UTDratio = 2
             for _ in range(UTDratio):
                 agent.train(replay_buffer)
+
+    best_pop_score = erl_manager.evolve(fitnesses, agent.actor, episode)
 
     # track and plot statistics
     tracker.track(info)
