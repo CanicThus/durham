@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # disable CUDA (better on Colab/NCC: choose an environment without GPU)
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""  # disable CUDA (better on Colab/NCC: choose an environment without GPU)
 import copy
 import torch
 import torch.nn as nn
@@ -48,15 +48,19 @@ class ReplayBuffer(object):
         self.size = min(self.size + 1, self.max_size)
 
     def _get_n_step_info(self):
-        state, action, reward, next_state, dead = self.n_step_buffer[-1]
-        reward = 0
+        state, action, _, _, _ = self.n_step_buffer[0]
+        target_next_state, target_dead = self.n_step_buffer[-1][3], self.n_step_buffer[-1][4]
+
+        n_step_reward = 0
         for i, transition in enumerate(self.n_step_buffer):
-            s, a, r, s_prime, d = transition
-            reward += (self.gamma ** i) * r
+            _, _, r, s_next, d = transition
+
+            n_step_reward += (self.gamma ** i) * r
             if d:
-                # 如果遇到 dead 状态，直接截断，后续奖励视作0
-                return s, a, r, s_prime, d
-        return state, action, reward, next_state, dead
+                target_next_state, target_dead = s_next, d
+                break
+
+        return state, action, n_step_reward, target_next_state, target_dead
 
     def finish_episode(self):
         # 回合结束时，清空 n_step_buffer
@@ -78,7 +82,7 @@ class ReplayBuffer(object):
         )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+print("device:", device)
 
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, net_width, maxaction):
@@ -355,7 +359,7 @@ env = rld.Recorder(
 )
 
 # training on CPU recommended
-rld.check_device()
+# rld.check_device()
 
 # environment info
 rld.env_info(env, print_out=True)
