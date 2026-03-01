@@ -381,16 +381,22 @@ class ERL_Manager:
         self.population = new_population
         return fitnesses[sorted_indices[0]]  # 返回种群中的最高分
 
+hard_mode = False
+
 env = rld.make("rldurham/Walker", render_mode="rgb_array")
-# env = rld.make("rldurham/Walker", render_mode="rgb_array", hardcore=True) # only attempt this when your agent has solved the non-hardcore version
+folder_prefix = "normal"
+if hard_mode:
+    env = rld.make("rldurham/Walker", render_mode="rgb_array", hardcore=True) # only attempt this when your agent has solved the non-hardcore version
+    folder_prefix = "hard"
+
 
 # get statistics, logs, and videos
 env = rld.Recorder(
     env,
     smoothing=10,                       # track rolling averages (useful for plotting)
     video=True,                         # enable recording videos
-    video_folder="videos",              # folder for videos
-    video_prefix="xxxx00-agent-video",  # prefix for videos (replace xxxx00 with your username)
+    video_folder=f"{folder_prefix}_videos",              # folder for videos
+    video_prefix="mwvy59-agent-video",  # prefix for videos (replace xxxx00 with your username)
     logs=True,                          # keep logs
 )
 
@@ -517,9 +523,9 @@ for episode in range(max_episodes):
 
     if int(ep_r) > base_save_score + 1:
         base_save_score = ep_r
-        agent.save(os.path.join(save_dir, f"normal_{ep_r}.pth"))
+        agent.save(os.path.join(save_dir, f"{folder_prefix}_{ep_r}.pth"))
 # don't forget to close environment (e.g. triggers last video save)
 env.close()
 
 # write log file (for coursework)
-env.write_log(folder="logs", file="xxxx00-agent-log.txt")  # replace xxxx00 with your username
+env.write_log(folder="logs", file=f"mwvy59-{folder_prefix}_agent-log.txt")  # replace xxxx00 with your username
