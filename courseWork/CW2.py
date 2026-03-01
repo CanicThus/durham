@@ -11,6 +11,13 @@ import rldurham as rld
 
 from collections import deque
 
+device = torch.device("cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.mps.is_available():
+    device = torch.device("mps")
+print("device:", device)
+
 class ReplayBuffer(object):
     def __init__(self, state_dim, action_dim, max_size=int(1e6), n_step=3, gamma=0.99):
         self.max_size = max_size
@@ -28,7 +35,7 @@ class ReplayBuffer(object):
         self.gamma = gamma
         self.n_step_buffer = deque(maxlen=self.n_step)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
 
     def add(self, state, action, reward, next_state, dead):
         self.n_step_buffer.append((state, action, reward, next_state, dead))
@@ -80,9 +87,6 @@ class ReplayBuffer(object):
             torch.FloatTensor(self.next_state[ind]).to(self.device),
             torch.FloatTensor(self.dead[ind]).to(self.device)
         )
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("device:", device)
 
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, net_width, maxaction):
