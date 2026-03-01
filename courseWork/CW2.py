@@ -296,7 +296,7 @@ class ERL_Manager:
         self.pop_size = pop_size
         self.mutation_rate = mutation_rate
         self.mutation_power = mutation_power
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
 
         # 初始化演化种群
         self.population = [Actor(state_dim, action_dim, net_width, max_action).to(self.device) for _ in range(pop_size)]
