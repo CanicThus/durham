@@ -250,6 +250,42 @@ class Agent(torch.nn.Module):
 
             self.delay_counter = -1
 
+    def save(self, filename):
+        """
+        保存模型和优化器的状态字典
+        :param filename: 保存的文件路径及名称 (例如: "checkpoints/agent_model.pth")
+        """
+        # 确保保存目录存在
+        import os
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+        torch.save({
+            'actor_state_dict': self.actor.state_dict(),
+            'actor_optimizer_state_dict': self.actor_optimizer.state_dict(),
+            'q_critic_state_dict': self.q_critic.state_dict(),
+            'q_critic_optimizer_state_dict': self.q_critic_optimizer.state_dict()
+        }, filename)
+        print(f"Model saved successfully at {filename}")
+
+    def load(self, filename):
+        """
+        载入模型和优化器的状态字典
+        :param filename: 载入的文件路径及名称
+        """
+        # 使用全局的 device 变量来确保跨设备（CPU/GPU）加载的兼容性
+        checkpoint = torch.load(filename, map_location=device)
+
+        self.actor.load_state_dict(checkpoint['actor_state_dict'])
+        self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
+        self.q_critic.load_state_dict(checkpoint['q_critic_state_dict'])
+        self.q_critic_optimizer.load_state_dict(checkpoint['q_critic_optimizer_state_dict'])
+
+        # 载入主网络后，强制同步目标网络，确保 target 网络与主网络参数一致
+        self.actor_target = copy.deepcopy(self.actor)
+        self.q_critic_target = copy.deepcopy(self.q_critic)
+
+        print(f"Model loaded successfully from {filename}")
+
 class ERL_Manager:
     def __init__(self, state_dim, action_dim, net_width, max_action, pop_size=5, mutation_rate=0.1,
                  mutation_power=0.05):
@@ -372,6 +408,9 @@ rld.render(env)
 seed, observation, info = rld.seed_everything(42, env)
 
 # 参数设计
+save_dir = "result"
+base_save_score = 240
+
 env_with_Dead = True  # Whether the Env has dead state. True for Env like BipedalWalkerHardcore-v3, CartPole-v0. False for Env like Pendulum-v0
 discrete_act, discrete_obs, act_dim, obs_dim = rld.env_info(env)
 state_dim = env.observation_space.shape[0]
@@ -435,7 +474,7 @@ for episode in range(max_episodes):
     # run episode
     ep_r = 0
     steps = 0
-    expl_noise *= 0.999
+    expl_noise = min(0.1, expl_noise * 0.999)
     done = False
     while not done:
         steps += 1
@@ -475,6 +514,10 @@ for episode in range(max_episodes):
     if (episode + 1) % 10 == 0:
         tracker.plot(r_mean_=True, r_std_=True, r_sum=dict(linestyle=':', marker='x'))
     print('episode:', episode, 'score:', ep_r, 'step:', steps)
+
+    if int(ep_r) > base_save_score + 1:
+        base_save_score = ep_r
+        agent.save(os.path.join(save_dir, f"normal_{ep_r}.pth"))
 # don't forget to close environment (e.g. triggers last video save)
 env.close()
 
