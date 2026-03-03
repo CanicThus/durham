@@ -216,6 +216,32 @@ class Agent(torch.nn.Module):
 
             self.delay_counter = -1
 
+    def save(self, filename):
+        """保存模型参数到指定路径"""
+        torch.save({
+            'actor': self.actor.state_dict(),
+            'actor_target': self.actor_target.state_dict(),
+            'q_critic': self.q_critic.state_dict(),
+            'q_critic_target': self.q_critic_target.state_dict(),
+            'actor_optimizer': self.actor_optimizer.state_dict(),
+            'q_critic_optimizer': self.q_critic_optimizer.state_dict(),
+        }, filename)
+        print(f"Model saved to {filename}")
+
+    def load(self, filename):
+        """从指定路径载入模型参数"""
+        if os.path.exists(filename):
+            checkpoint = torch.load(filename, map_location=device)
+            self.actor.load_state_dict(checkpoint['actor'])
+            self.actor_target.load_state_dict(checkpoint['actor_target'])
+            self.q_critic.load_state_dict(checkpoint['q_critic'])
+            self.q_critic_target.load_state_dict(checkpoint['q_critic_target'])
+            self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
+            self.q_critic_optimizer.load_state_dict(checkpoint['q_critic_optimizer'])
+            print(f"Model loaded from {filename}")
+        else:
+            print(f"No checkpoint found at {filename}")
+
 
 env = rld.make("rldurham/Walker", render_mode="rgb_array")
 # env = rld.make("rldurham/Walker", render_mode="rgb_array", hardcore=True) # only attempt this when your agent has solved the non-hardcore version
@@ -226,7 +252,7 @@ env = rld.Recorder(
     smoothing=10,                       # track rolling averages (useful for plotting)
     video=True,                         # enable recording videos
     video_folder="videos",              # folder for videos
-    video_prefix="xxxx00-agent-video",  # prefix for videos (replace xxxx00 with your username)
+    video_prefix="mwvy59-agent-video",  # prefix for videos (replace xxxx00 with your username)
     logs=True,                          # keep logs
 )
 
@@ -267,7 +293,8 @@ kwargs = {
     "dropout_rate" : 0.01,
 }
 max_episodes = 1000
-
+save_score = 235
+save_path = "result"
 # initialise agent, replay_buffer
 agent = Agent(**kwargs)
 replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(1e6))
@@ -291,7 +318,7 @@ for episode in range(max_episodes):
     # run episode
     ep_r = 0
     steps = 0
-    expl_noise *= 0.999
+    expl_noise = min(0.1, expl_noise * 0.999)
     done = False
     while not done:
         steps += 1
@@ -326,8 +353,11 @@ for episode in range(max_episodes):
     if (episode + 1) % 10 == 0:
         tracker.plot(r_mean_=True, r_std_=True, r_sum=dict(linestyle=':', marker='x'))
     print('episode:', episode, 'score:', ep_r, 'step:', steps)
+
+    if int(ep_r) >save_score:
+        agent.save(os.path.join(save_path, f"{episode}-{ep_r}.pth"))
 # don't forget to close environment (e.g. triggers last video save)
 env.close()
 
 # write log file (for coursework)
-env.write_log(folder="logs", file="xxxx00-agent-log.txt")  # replace xxxx00 with your username
+env.write_log(folder="logs", file="mwvy59-agent-log.txt")  # replace xxxx00 with your username
