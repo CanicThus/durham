@@ -17,7 +17,7 @@ elif torch.mps.is_available():
 print("device:", device)
 
 class ReplayBuffer(object):
-    def __init__(self, state_dim, action_dim, max_size=int(1e6)):
+    def __init__(self, state_dim, action_dim, max_size=int(1e6), eta=0.996, c_min=5000):
         self.max_size = max_size
         self.ptr = 0
         self.size = 0
@@ -30,6 +30,10 @@ class ReplayBuffer(object):
 
         self.device = device
 
+        # ERE 超参数
+        self.eta = eta
+        self.c_min = c_min
+
     def add(self, state, action, reward, next_state, dead):
         self.state[self.ptr] = state
         self.action[self.ptr] = action
@@ -40,9 +44,23 @@ class ReplayBuffer(object):
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
+    def sample(self, batch_size, k=None, K=None):
+        if k is not None and K is not None:
+            # ERE 公式: N_k = max(N_total * eta^(k * 1000 / K), c_min)
+            n_k = int(max(self.size * (self.eta ** (k * 1000 / K)), self.c_min))
+            n_k = min(n_k, self.size)  # 确保范围不超过当前 buffer 大小
 
-    def sample(self, batch_size):
-        ind = np.random.randint(0, self.size, size=batch_size)
+            # 计算采样区间的索引范围
+            # 在循环队列中，最近的经验位于 [ptr - n_k, ptr)
+            # 使用取模运算处理越界情况
+            idx_range_end = self.ptr
+            idx_range_start = self.ptr - n_k
+
+            # 随机生成范围内索引并取模
+            ind = np.random.randint(idx_range_start, idx_range_end, size=batch_size) % self.max_size
+        else:
+            # 默认全量均匀采样
+            ind = np.random.randint(0, self.size, size=batch_size)
 
         return (
             torch.FloatTensor(self.state[ind]).to(self.device),
@@ -145,11 +163,11 @@ class Agent(torch.nn.Module):
             a = self.actor(state)
         return a.cpu().numpy().flatten()
 
-    def train(self, replay_buffer):
+    def train(self, replay_buffer, k=None, K=None):
         self.delay_counter += 1
 
         with torch.no_grad():
-            s, a, r, s_prime, dead_mask = replay_buffer.sample(self.Q_batchsize)
+            s, a, r, s_prime, dead_mask = replay_buffer.sample(self.Q_batchsize, k=k, K=K)
             noise = (torch.randn_like(a) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip)
             smoothed_target_a = (
                     self.actor_target(s_prime) + noise  # Noisy on target action
@@ -295,9 +313,12 @@ kwargs = {
 max_episodes = 1000
 save_score = 235
 save_path = "result"
+eta_0 = 0.996
+cmin = 5000
 # initialise agent, replay_buffer
 agent = Agent(**kwargs)
-replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(1e6))
+replay_buffer = ReplayBuffer(state_dim, action_dim, max_size=int(1e6), eta=eta_0, c_min=cmin)
+
 
 # track statistics for plotting
 tracker = rld.InfoTracker()
@@ -345,8 +366,11 @@ for episode in range(max_episodes):
         # train the agent after each step
         if replay_buffer.size > 2000:
             UTDratio = 2
-            for _ in range(UTDratio):
-                agent.train(replay_buffer)
+            K = steps * UTDratio
+            for i in range(UTDratio):
+                # k 代表在该 episode 中当前的累计更新次数
+                current_k = (steps - 1) * UTDratio + (i + 1)
+                agent.train(replay_buffer, k=current_k, K=K)
 
     # track and plot statistics
     tracker.track(info)
