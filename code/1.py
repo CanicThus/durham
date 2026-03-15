@@ -238,7 +238,13 @@ class PuzzlePiece:
 
         # 预计算掩码 (Mask)：非纯黑背景区域为 255，背景为 0
         gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-        _, self.mask = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
+        self.mask = cv2.adaptiveThreshold(
+            gray, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,  # 高斯加权阈值
+            cv2.THRESH_BINARY,
+            blockSize=11,  # 局部邻域大小（奇数）
+            C=2  # 阈值偏移量，减小可保留更多暗部
+        )
 
 
     def _extract_contours(self):
@@ -418,47 +424,102 @@ class PuzzleSolver:
 
     def compute_overlap_penalty(self, piece_a, piece_b, dx, dy, dr):
         """
-        计算在给定相对位姿下，碎片A和碎片B的掩码重叠面积。
-
-        参数:
-            piece_a: 固定的基准碎片 (锚点)
-            piece_b: 正在评估的候选碎片
-            dx, dy: B 相对于 A 的平移量
-            dr: B 的旋转角度 (度)
-
-        返回:
-            overlap_area: 重叠的像素数量
+        优化版重叠面积计算（解决尺寸截断问题）
+        输入：
+            piece_a: 已放置的参考碎片
+            piece_b: 待匹配的碎片
+            dx, dy: 碎片B相对A的平移量
+            dr: 碎片B相对A的旋转角度（度）
+        输出：
+            overlap_area: 重叠像素数
         """
+        # 1. 基础校验：掩码为空直接返回严重重叠
         mask_a = piece_a.mask
         mask_b = piece_b.mask
+        if mask_a is None or mask_b is None:
+            return self.MAX_TOLERATED_OVERLAP + 1  # 视为超阈值重叠
+        if np.sum(mask_a) == 0 or np.sum(mask_b) == 0:
+            return self.MAX_TOLERATED_OVERLAP + 1
 
         h_a, w_a = mask_a.shape
         h_b, w_b = mask_b.shape
 
-        # 1. 获取 B 的旋转矩阵 (绕 B 的图像中心旋转)
-        center_b = (w_b // 2, h_b // 2)
-        M = cv2.getRotationMatrix2D(center_b, dr, 1.0)
+        # 2. 步骤1：构建碎片B的变换矩阵（旋转+平移）
+        # 2.1 绕B自身中心旋转
+        center_b = (w_b / 2.0, h_b / 2.0)  # 用浮点数避免整数截断
+        M_rot = cv2.getRotationMatrix2D(center_b, dr, 1.0)
+        # 2.2 叠加平移量（dx/dy是B相对A的平移）
+        M_rot[0, 2] += dx
+        M_rot[1, 2] += dy
+        M = M_rot  # 最终变换矩阵
 
-        # 2. 将平移量 (dx, dy) 叠加到仿射变换矩阵的平移分量中
-        # 注意：这里的 dx, dy 是指将 B 变换后放入 A 坐标系时的绝对平移差
-        M[0, 2] += dx
-        M[1, 2] += dy
+        # 3. 步骤2：计算碎片B变换后的完整包围盒（避免截断）
+        # 3.1 获取B的四个角点（原始坐标）
+        corners_b = np.array([
+            [0, 0],  # 左上角
+            [w_b, 0],  # 右上角
+            [w_b, h_b],  # 右下角
+            [0, h_b]  # 左下角
+        ], dtype=np.float32).reshape(-1, 1, 2)  # 适配cv2.transform输入格式
 
-        # 3. 仿射变换：将 B 的 mask 投射到 A 的空间大小
-        # borderValue=0 保证了超出的背景全部填为黑色(0)
+        # 3.2 对B的角点做变换，得到变换后的位置
+        transformed_corners_b = cv2.transform(corners_b, M)
+        transformed_corners_b = transformed_corners_b.reshape(-1, 2)  # 展平为Nx2
+
+        # 3.3 计算变换后B的包围盒范围
+        min_x_b = np.min(transformed_corners_b[:, 0])
+        max_x_b = np.max(transformed_corners_b[:, 0])
+        min_y_b = np.min(transformed_corners_b[:, 1])
+        max_y_b = np.max(transformed_corners_b[:, 1])
+
+        # 4. 步骤3：计算碎片A的包围盒范围（A的原始位置）
+        # A的左上角是(0,0)，右下角是(w_a, h_a)
+        min_x_a, max_x_a = 0, w_a
+        min_y_a, max_y_a = 0, h_a
+
+        # 5. 步骤4：计算两个碎片的联合包围盒（统一坐标系）
+        min_x = int(np.floor(min(min_x_a, min_x_b)))
+        max_x = int(np.ceil(max(max_x_a, max_x_b)))
+        min_y = int(np.floor(min(min_y_a, min_y_b)))
+        max_y = int(np.ceil(max(max_y_a, max_y_b)))
+
+        # 6. 步骤5：调整变换矩阵，让联合包围盒从(0,0)开始（避免负坐标）
+        # 偏移量：将联合包围盒的最小坐标移到(0,0)
+        offset_x = -min_x
+        offset_y = -min_y
+
+        # 6.1 调整B的变换矩阵（增加偏移量）
+        M_adjusted = M.copy()
+        M_adjusted[0, 2] += offset_x
+        M_adjusted[1, 2] += offset_y
+
+        # 6.2 计算A在联合坐标系中的平移矩阵（A的原始位置 + 偏移量）
+        M_a = np.array([
+            [1, 0, offset_x],  # x轴偏移
+            [0, 1, offset_y]  # y轴偏移
+        ], dtype=np.float32)
+
+        # 7. 步骤6：对两个掩码做变换，统一到联合包围盒坐标系
+        # 7.1 变换B的掩码（旋转+平移+偏移）
         warped_mask_b = cv2.warpAffine(
             mask_b,
-            M,
-            (w_a, h_a),
+            M_adjusted,
+            (max_x - min_x, max_y - min_y),  # 联合包围盒尺寸
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0
         )
 
-        # 4. 快速位运算求交集
-        # 只有在 mask_a 和 warped_mask_b 同时为 255 的像素位置，结果才为 255
-        overlap_mask = cv2.bitwise_and(mask_a, warped_mask_b)
+        # 7.2 变换A的掩码（仅偏移，无旋转）
+        warped_mask_a = cv2.warpAffine(
+            mask_a,
+            M_a,
+            (max_x - min_x, max_y - min_y),  # 联合包围盒尺寸
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0
+        )
 
-        # 5. 统计非零像素（即重叠像素）的数量
+        # 8. 步骤7：计算重叠像素数
+        overlap_mask = cv2.bitwise_and(warped_mask_a, warped_mask_b)
         overlap_area = np.count_nonzero(overlap_mask)
 
         return overlap_area
@@ -658,6 +719,8 @@ class PuzzleSolver:
             for placed in placed_pieces:
                 for unplaced in unplaced_pieces:
                     # 获取候选位姿
+                    if unplaced.piece_id == "CocoTiles_005001_000016_000001":
+                        print(1)
                     candidates = self.generate_pose_candidates(placed, unplaced)
                     for dx, dy, dr in candidates:
                         score = self.score_pose_hypothesis(placed, unplaced, dx, dy, dr)
@@ -792,6 +855,8 @@ def render_assembled_puzzle(solver, output_filepath="assembled_result.png", padd
 
     # 3. 第二遍遍历：将每个碎片拼贴到画布上
     for pd in pieces_data:
+        if pd["piece_id"] not in ("CocoTiles_005001_000016_000000", "CocoTiles_005001_000016_000002"):
+            continue
         # 计算在画布上的实际绘制起点 (减去极小值以处理负坐标，并加上留白)
         x_start = int(pd['g_left'] - min_gx) + padding
         y_start = int(pd['g_top'] - min_gy) + padding
