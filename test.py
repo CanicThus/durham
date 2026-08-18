@@ -273,31 +273,26 @@ def run_ant_ref(ctx: RunContext) -> Dict[str, object]:
 
 def run_tabucol(ctx: RunContext) -> Dict[str, object]:
     from tabucal import TabuCol
-    from dsatur import DSATUR
 
-    def execute() -> Tuple[Dict[int, int], int]:
+    def execute() -> Tuple[Dict[int, int], int, Dict[str, int]]:
         max_colors = ctx.args.max_colors
-        # if max_colors is None:
-        #     dsatur_agent = DSATUR()
-        #     dsatur_agent.load_graph(str(ctx.graph_path))
-        #     _, max_colors = dsatur_agent.solve(verbose=False)
 
         agent = TabuCol(
             random_seed=ctx.args.random_seed,
             max_iterations=ctx.args.tabu_iterations,
             max_restarts=ctx.args.tabu_restarts,
         )
-        print(f"max_colors: {max_colors}, max_iterations: {ctx.args.tabu_iterations}")
         agent.load_graph(str(ctx.graph_path))
-        return agent.solve(
+        coloring, color_count = agent.solve(
             max_colors=max_colors,
             min_colors=ctx.args.min_colors,
             max_iterations=ctx.args.tabu_iterations,
             max_restarts=ctx.args.tabu_restarts,
             verbose=ctx.args.verbose,
         )
+        return coloring, color_count, dict(agent.last_search_stats)
 
-    coloring, color_count = quiet_call(execute, ctx.args.verbose)
+    coloring, color_count, search_stats = quiet_call(execute, ctx.args.verbose)
     coloring = normalize_coloring(coloring)
     conflicts = count_conflicts(ctx.graph_path, coloring)
     return {
@@ -306,6 +301,7 @@ def run_tabucol(ctx: RunContext) -> Dict[str, object]:
         "valid_coloring": conflicts == 0,
         "conflicting_edges": conflicts,
         "coloring": coloring,
+        "search_stats": search_stats,
     }
 
 
